@@ -92,6 +92,7 @@ class customerAuthController {
   customer_login = async (req, res) => {
     const { email, password } = req.body;
     try {
+      console.log("ask for reg for user");
       const customer = await customerModel
         .findOne({ email })
         .select("+password");

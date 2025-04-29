@@ -151,6 +151,7 @@ app.use("/api", require("./routes/home/customerAuthRoutes"));   // Done in flutt
 app.use("/api", require("./routes/dashboard/sellerRoutes")); //no need
 app.use("/api", require("./routes/dashboard/categoryRoutes")); // no need
 app.use("/api", require("./routes/dashboard/productRoutes")); // no need
+
 app.get("/", (req, res) => res.send("Welcome to Fly Numedia!"));
 const port = process.env.PORT;
 dbConnect();

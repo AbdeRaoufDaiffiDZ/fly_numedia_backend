@@ -2,6 +2,8 @@ const categoryModel = require("../../models/categoryModel");
 const productModel = require("../../models/productModel");
 const queryProducts = require("../../utiles/queryProducts");
 const reviewModel = require("../../models/reviewModel");
+const axios = require("axios");
+
 const moment = require("moment");
 const {
   mongo: { ObjectId },
@@ -11,21 +13,7 @@ const { responseReturn } = require("../../utiles/response");
 const sellerModel = require("../../models/sellerModel");
 class homeControllers {
   formateProduct = (products) => {
-    const productArray = [];
-    let i = 0;
-    while (i < products.length) {
-      let temp = [];
-      let j = i;
-      while (j < i + 3) {
-        if (products[j]) {
-          temp.push(products[j]);
-        }
-        j++;
-      }
-      productArray.push([...temp]);
-      i = j;
-    }
-    return productArray;
+    return products; // Return the products array without grouping
   };
   get_categorys = async (req, res) => {
     try {
@@ -173,27 +161,83 @@ class homeControllers {
 
   price_range_product = async (req, res) => {
     try {
+      const {
+        minPrice = 0,
+        maxPrice = Number.MAX_SAFE_INTEGER,
+        page = 1,
+        limit = 20,
+      } = req.query;
+
+      // Validate price range
       const priceRange = {
-        low: 0,
-        high: 0,
+        low: parseFloat(minPrice),
+        high: parseFloat(maxPrice),
       };
-      const products = await productModel.find({}).limit(9).sort({
-        createdAt: -1,
-      });
-      const latest_product = this.formateProduct(products);
-      const getForPrice = await productModel.find({}).sort({
-        price: 1,
-      });
-      if (getForPrice.length > 0) {
-        priceRange.high = getForPrice[getForPrice.length - 1].price;
-        priceRange.low = getForPrice[0].price;
+
+      if (
+        isNaN(priceRange.low) ||
+        isNaN(priceRange.high) ||
+        priceRange.low > priceRange.high
+      ) {
+        return responseReturn(res, 400, { error: "Invalid price range" });
       }
+
+      // Calculate skip value for pagination
+      const skip = (page - 1) * limit;
+
+      // Query products within price range
+      const query = {
+        price: {
+          $gte: priceRange.low,
+          $lte: priceRange.high,
+        },
+      };
+
+      // Get products with pagination
+      const products = await productModel
+        .find(query)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .sort({ createdAt: -1 });
+
+      // Format products (return flat list)
+      const formattedProducts = products; // Simply return the products array as is
+
+      // Get total count for pagination
+      const totalProducts = await productModel.countDocuments(query);
+
+      // Get actual price range from database
+      const priceStats = await productModel.aggregate([
+        {
+          $group: {
+            _id: null,
+            minPrice: { $min: "$price" },
+            maxPrice: { $max: "$price" },
+          },
+        },
+      ]);
+
+      const availablePriceRange =
+        priceStats.length > 0
+          ? {
+              low: priceStats[0].minPrice,
+              high: priceStats[0].maxPrice,
+            }
+          : { low: 0, high: 0 };
+
       responseReturn(res, 200, {
-        latest_product,
-        priceRange,
+        products: formattedProducts,
+        priceRange: availablePriceRange,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalProducts / limit),
+          totalProducts,
+          hasMore: skip + products.length < totalProducts,
+        },
       });
     } catch (error) {
-      console.log(error.message);
+      console.error(error.message);
+      responseReturn(res, 500, { error: "Server error" });
     }
   };
 
@@ -201,6 +245,7 @@ class homeControllers {
     const parPage = 12;
     req.query.parPage = parPage;
     try {
+      console.log("req to filter products");
       const products = await productModel.find({}).sort({
         createdAt: -1,
       });
@@ -231,6 +276,74 @@ class homeControllers {
       console.log(error.message);
     }
   };
+
+  // query_products = async (req, res) => {
+  //   const parPage = 12;
+  //   const page = parseInt(req.query.page) || 1;
+
+  //   try {
+  //     const filterConditions = [];
+
+  //     // Price filter
+  //     const minPrice = parseFloat(req.query.minPrice);
+  //     const maxPrice = parseFloat(req.query.maxPrice);
+  //     if (!isNaN(minPrice) && !isNaN(maxPrice)) {
+  //       filterConditions.push({ price: { $gte: minPrice, $lte: maxPrice } });
+  //     }
+
+  //     // Category filter
+  //     if (req.query.category && req.query.category.trim() !== "") {
+  //       filterConditions.push({ category: req.query.category.trim() });
+  //     }
+
+  //     // Rating filter
+  //     const minRating = parseFloat(req.query.rating);
+  //     if (!isNaN(minRating) && minRating > 0) {
+  //       filterConditions.push({ rating: { $gte: minRating } });
+  //     }
+
+  //     // Search filter
+  //     if (req.query.searchValue && req.query.searchValue.trim() !== "") {
+  //       filterConditions.push({ $text: { $search: req.query.searchValue.trim() } });
+  //     }
+
+  //     // Build the final query
+  //     const query = filterConditions.length > 0 ? { $and: filterConditions } : {};
+
+  //     // Build sort object
+  //     let sortOption = { createdAt: -1 };
+  //     if (req.query.sortPrice === 'low-to-high') {
+  //       sortOption = { price: 1 };
+  //     } else if (req.query.sortPrice === 'high-to-low') {
+  //       sortOption = { price: -1 };
+  //     }
+
+  //     // Debug (only in development)
+  //     if (process.env.NODE_ENV !== 'production') {
+  //       console.log('MongoDB Query:', JSON.stringify(query, null, 2));
+  //       console.log('Sort Option:', sortOption);
+  //     }
+
+  //     // Execute queries
+  //     const totalProduct = await productModel.countDocuments(query);
+  //     const products = await productModel
+  //       .find(query)
+  //       .sort(sortOption)
+  //       .skip((page - 1) * parPage)
+  //       .limit(parPage)
+  //       .lean();
+
+  //     return res.status(200).json({
+  //       products,
+  //       totalProduct,
+  //       parPage,
+  //     });
+
+  //   } catch (error) {
+  //     console.error('Error in query_products:', error.message);
+  //     return res.status(500).json({ error: 'Internal server error' });
+  //   }
+  // };
 
   submit_review = async (req, res) => {
     const { name, rating, review, productId } = req.body;
@@ -352,6 +465,101 @@ class homeControllers {
       console.log(error);
     }
   };
-}
+  //   chatBoot = async (req, res) => {
+  //     try {
+  //       // Extract the message from the request body
+  //       const { message } = req.body;
 
+  //       // Validate the message
+  //       if (!message || typeof message !== 'string') {
+  //         return res.status(400).json({
+  //           error: 'Invalid or missing message field',
+  //         });
+  //       }
+
+  //       // Create the response object
+  //       const response = {
+  //         message, // Echo the input message
+  //         response: message, // Return the same message as the bot's response
+  //         timestamp: new Date().toISOString(), // Current time in ISO 8601 format
+  //       };
+
+  //       // Send the response
+  //       res.status(200).json(response);
+  //     } catch (error) {
+  //       // Handle unexpected errors
+  //       console.error('Error in chatBot:', error);
+  //       res.status(500).json({
+  //         error: 'Internal server error',
+  //         details: error.message,
+  //       });
+  //     }
+  //   };
+
+  chatBoot = async (req, res) => {
+    try {
+      // Extract and validate question
+      const { message } = req.body;
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({
+          error: 'Invalid or missing message field',
+        });
+      }
+  
+      // Configure Python API URL
+      const pythonApiUrl = process.env.PYTHON_API_URL || 'http://192.168.75.115:5000/ask';
+  
+      // Send request to Python API
+      const response = await fetch(pythonApiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question: message }), // Use 'question' for Python API
+      });
+  
+      // Parse response
+      const data = await response.json();
+  
+      if (response.ok) {
+        // Validate response structure
+        if (!data.answer) {
+          throw new Error('Invalid response from Python API: missing answer field');
+        }
+  
+        // Map Python response to Flutter format
+        const answer = {
+          message, // Original user input
+          response: data.answer, // Python API's answer
+          timestamp: new Date().toISOString(),
+        };
+        res.status(200).json(answer);
+      } else {
+        // Log and return error
+        console.error('Python API error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: data.error || 'Unknown error',
+          details: data.details || 'No details provided',
+          requestBody: req.body,
+        });
+        return res.status(response.status).json({
+          error: 'Python API error',
+          details: data.error || 'Failed to process request',
+        });
+      }
+    } catch (error) {
+      // Handle network or unexpected errors
+      console.error('Error in chatBoot:', {
+        message: error.message,
+        stack: error.stack,
+        requestBody: req.body,
+      });
+      res.status(500).json({
+        error: 'Failed to process message',
+        details: error.message,
+      });
+    }
+  };
+}
 module.exports = new homeControllers();
