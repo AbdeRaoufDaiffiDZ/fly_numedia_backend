@@ -9,9 +9,9 @@ const {
 class customerAuthController {
   customer_register = async (req, res) => {
     const { name, email, phone, password } = req.body;
-
     try {
       const customer = await customerModel.findOne({ email });
+      const role = "customer";
       if (customer) {
         return responseReturn(res, 404, { error: "L'e-mail existe déjà" });
       }
@@ -21,10 +21,11 @@ class customerAuthController {
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
+        role: 'customer',
         password: await bcrypt.hash(password, 10),
         method: "manual",
       });
-
+      
       // Create related sellerCustomer entry
       await sellerCustomerModel.create({
         myId: createCustomer.id,
@@ -37,6 +38,7 @@ class customerAuthController {
         email: createCustomer.email,
         phone: createCustomer.phone,
         method: createCustomer.method,
+        role: createCustomer.role,
       });
 
       // Set the cookie with the token
@@ -51,7 +53,7 @@ class customerAuthController {
       const descriptionAdmin =
         "Un nouvel utilisateur s'est inscrit sur la plateforme. Voici les détails de l'utilisateur:";
       const details = { name, email, phone };
-
+      console.log("try to send email");
       await send_email({
         adminEmail,
         subject: subjectAdmin,
@@ -69,6 +71,8 @@ class customerAuthController {
       const titleClient = "Merci pour votre inscription!";
       const descriptionClient =
         "Bienvenue sur Fly Numedia! Nous sommes ravis de vous accueillir sur notre plateforme. Voici vos informations d'inscription:";
+      console.log("try to send to client");
+      console.log(clientEmail);
 
       await send_email({
         clientEmail,
@@ -80,9 +84,10 @@ class customerAuthController {
         sendToSellers: false,
         sendToClient: true,
       });
-
+      console.log("send done");
+      
       // Return success response
-      responseReturn(res, 201, { message: "Register success", token });
+      responseReturn(res, 201, { message: "Register success", token, role  });
     } catch (error) {
       console.error("Error in customer_register:", error.message);
       responseReturn(res, 500, { error: "Internal server error" });
@@ -92,7 +97,8 @@ class customerAuthController {
   customer_login = async (req, res) => {
     const { email, password } = req.body;
     try {
-      console.log("ask for reg for user");
+      console.log("ask login for customer");
+
       const customer = await customerModel
         .findOne({ email })
         .select("+password");
@@ -104,6 +110,7 @@ class customerAuthController {
             name: customer.name,
             email: customer.email,
             method: customer.method,
+            role: customer.role
           });
           res.cookie("customerToken", token, {
             expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
