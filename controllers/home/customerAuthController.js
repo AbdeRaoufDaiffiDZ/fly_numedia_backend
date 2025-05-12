@@ -21,11 +21,11 @@ class customerAuthController {
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        role: 'customer',
+        role: "customer",
         password: await bcrypt.hash(password, 10),
         method: "manual",
       });
-      
+
       // Create related sellerCustomer entry
       await sellerCustomerModel.create({
         myId: createCustomer.id,
@@ -85,9 +85,9 @@ class customerAuthController {
         sendToClient: true,
       });
       console.log("send done");
-      
+
       // Return success response
-      responseReturn(res, 201, { message: "Register success", token, role  });
+      responseReturn(res, 201, { message: "Register success", token, role });
     } catch (error) {
       console.error("Error in customer_register:", error.message);
       responseReturn(res, 500, { error: "Internal server error" });
@@ -110,7 +110,7 @@ class customerAuthController {
             name: customer.name,
             email: customer.email,
             method: customer.method,
-            role: customer.role
+            role: customer.role,
           });
           res.cookie("customerToken", token, {
             expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
@@ -201,7 +201,9 @@ class customerAuthController {
     const { email, code, newPassword } = req.body;
 
     try {
-      const customer = await customerModel.findOne({ email });
+      const customer = await customerModel
+        .findOne({ email })
+        .select("+resetCode");
       if (!customer) {
         return responseReturn(res, 404, { error: "L'e-mail n'existe pas" });
       }
@@ -216,13 +218,22 @@ class customerAuthController {
       if (!codeMatch) {
         return responseReturn(res, 400, { error: "Code invalide." });
       }
-
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       customer.password = hashedPassword;
       customer.resetCode = undefined;
       customer.resetCodeExpiry = undefined;
 
       await customer.save();
+      const token = await createToken({
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        method: customer.method,
+        role: customer.role,
+      });
+      res.cookie("customerToken", token, {
+        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
 
       await send_email({
         clientEmail: email,
@@ -241,6 +252,7 @@ class customerAuthController {
 
       return responseReturn(res, 200, {
         message: "Mot de passe réinitialisé avec succès.",
+        token,
       });
     } catch (error) {
       console.error("Error in customer_reset_password:", error.message);
