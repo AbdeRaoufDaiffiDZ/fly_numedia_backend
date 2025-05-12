@@ -120,6 +120,127 @@ class customerAuthController {
     }
   };
 
+  customer_send_reset_code = async (req, res) => {
+    const { email } = req.body;
+    console.log("ask for rest code");
+    try {
+      const customer = await customerModel.findOne({ email });
+      if (!customer) {
+        return responseReturn(res, 404, { error: "L'e-mail n'existe pas" });
+      }
+
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const hashedCode = await bcrypt.hash(code, 10);
+      const expiry = Date.now() + 5 * 60 * 1000;
+
+      customer.resetCode = hashedCode;
+      customer.resetCodeExpiry = expiry;
+      await customer.save();
+
+      const details = { name: customer.name, email, phone: customer.phone };
+
+      await send_email({
+        clientEmail: email,
+        subject: "Code de réinitialisation du mot de passe",
+        title: "Réinitialisation du mot de passe",
+        description: `Votre code de réinitialisation est : <b>${code}</b>. Il expirera dans 5 minutes.`,
+        details: details,
+        sendToAdmin: false,
+        sendToSellers: false,
+        sendToClient: true,
+      });
+
+      responseReturn(res, 200, {
+        message: "Code envoyé avec succès à votre e-mail.",
+      });
+    } catch (error) {
+      console.error("Error in customer_send_reset_code:", error.message);
+      responseReturn(res, 500, { error: "Erreur interne du serveur" });
+    }
+  };
+
+  customer_verify_code = async (req, res) => {
+    const { email, code } = req.body;
+    console.log("verify code");
+    try {
+      const customer = await customerModel
+        .findOne({ email })
+        .select("+resetCode");
+      if (!customer) {
+        return responseReturn(res, 404, { error: "L'e-mail n'existe pas" });
+      }
+      console.log(customer.resetCodeExpiry);
+      console.log(customer.resetCode);
+
+      if (!customer.resetCodeExpiry || customer.resetCodeExpiry < Date.now()) {
+        return responseReturn(res, 400, {
+          error: "Le code a expiré. Veuillez demander un nouveau code.",
+        });
+      }
+
+      const codeMatch = await bcrypt.compare(code, customer.resetCode);
+      if (!codeMatch) {
+        return responseReturn(res, 400, { error: "Code invalide." });
+      }
+
+      return responseReturn(res, 200, { message: "Code vérifié avec succès." });
+    } catch (error) {
+      console.error("Error in customer_verify_code:", error.message);
+      return responseReturn(res, 500, { error: "Erreur interne du serveur" });
+    }
+  };
+
+  customer_reset_password = async (req, res) => {
+    const { email, code, newPassword } = req.body;
+
+    try {
+      const customer = await customerModel.findOne({ email });
+      if (!customer) {
+        return responseReturn(res, 404, { error: "L'e-mail n'existe pas" });
+      }
+
+      if (!customer.resetCodeExpiry || customer.resetCodeExpiry < Date.now()) {
+        return responseReturn(res, 400, {
+          error: "Le code a expiré. Veuillez demander un nouveau code.",
+        });
+      }
+
+      const codeMatch = await bcrypt.compare(code, customer.resetCode);
+      if (!codeMatch) {
+        return responseReturn(res, 400, { error: "Code invalide." });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      customer.password = hashedPassword;
+      customer.resetCode = undefined;
+      customer.resetCodeExpiry = undefined;
+
+      await customer.save();
+
+      await send_email({
+        clientEmail: email,
+        subject: "Votre mot de passe a été modifié",
+        title: "Confirmation de modification du mot de passe",
+        description: `Bonjour ${customer.name},<br><br>Votre mot de passe a été modifié avec succès. Si vous n'êtes pas à l'origine de cette action, veuillez nous contacter immédiatement.`,
+        details: {
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+        },
+        sendToAdmin: false,
+        sendToSellers: false,
+        sendToClient: true,
+      });
+
+      return responseReturn(res, 200, {
+        message: "Mot de passe réinitialisé avec succès.",
+      });
+    } catch (error) {
+      console.error("Error in customer_reset_password:", error.message);
+      return responseReturn(res, 500, { error: "Erreur interne du serveur" });
+    }
+  };
+
   customer_logout = async (req, res) => {
     res.cookie("customerToken", "", {
       expires: new Date(Date.now()),

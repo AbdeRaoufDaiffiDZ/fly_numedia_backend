@@ -23,6 +23,13 @@ const customerSchema = new Schema(
       type: String,
       required: true,
     },
+    resetCode: {
+      type: String,
+      select: false,
+    },
+    resetCodeExpiry: {
+      type: Date,
+    },
   },
   { timestamps: true }
 );
