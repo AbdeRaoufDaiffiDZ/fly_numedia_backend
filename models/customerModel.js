@@ -30,6 +30,10 @@ const customerSchema = new Schema(
     resetCodeExpiry: {
       type: Date,
     },
+    role: {
+      type: String,
+      default: 'customer'
+  }
   },
   { timestamps: true }
 );

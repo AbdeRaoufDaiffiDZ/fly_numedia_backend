@@ -1,5 +1,7 @@
 const adminModel = require("../models/adminModel");
 const sellerModel = require("../models/sellerModel");
+const customoerModel = require("../models/customerModel");
+
 const sellerCustomerModel = require("../models/chat/sellerCustomerModel");
 const bcrpty = require("bcrypt");
 const formidable = require("formidable");
@@ -138,18 +140,22 @@ class authControllers {
   };
 
   getUser = async (req, res) => {
-    console.log("req to get client");
-
     const { id, role } = req;
+    console.log(`req to get client: ${id}`);
+    console.log(`req from role: ${role}`)
     try {
       if (role === "admin") {
         const user = await adminModel.findById(id);
         responseReturn(res, 200, { userInfo: user });
-      } else if (role === "partner" || role === "guide") {
+      } else if (role === "partner" || role === "guide") {µ
+        
         const seller = await sellerModel.findById(id);
         responseReturn(res, 200, { userInfo: seller });
+      } else if (role === "customer") {
+        const customer = await customoerModel.findById(id);
+        responseReturn(res, 200, { userInfo: customer });
       } else {
-        responseReturn(res, 403, { error: "Access denied" });
+        responseReturn(res, 404, { error: "User not found" });
       }
     } catch (error) {
       responseReturn(res, 500, { error: "Internal server error" });
