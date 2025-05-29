@@ -10,5 +10,6 @@ router.post("/customer/submit-review", homeControllers.submit_review); // done
 router.get("/customer/get-reviews/:productId", homeControllers.get_reviews);
 router.get("/get-active-guides", homeControllers.get_active_guides);
 router.post("/chat-boot", homeControllers.chatBoot);
+router.get("/amadeus/shopping/flight-offers", homeControllers.flight_offers);
 
 module.exports = router;

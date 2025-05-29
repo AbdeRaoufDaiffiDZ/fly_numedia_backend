@@ -561,5 +561,146 @@ class homeControllers {
       });
     }
   };
+
+  flight_offers = async (req, res) => {
+  try {
+    // Extract and validate query parameters
+    const {
+      originLocationCode,
+      destinationLocationCode,
+      departureDate,
+      returnDate,
+      adults = 2,
+      max = 5,
+    } = req.query;
+
+    if (!originLocationCode || !destinationLocationCode || !departureDate) {
+      return res.status(400).json({
+        error: 'Missing required query parameters',
+        details: 'originLocationCode, destinationLocationCode, and departureDate are required',
+      });
+    }
+
+    // Validate parameter types and formats
+    if (
+      typeof originLocationCode !== 'string' ||
+      typeof destinationLocationCode !== 'string' ||
+      typeof departureDate !== 'string' ||
+      (returnDate && typeof returnDate !== 'string') ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(departureDate) ||
+      (returnDate && !/^\d{4}-\d{2}-\d{2}$/.test(returnDate))
+    ) {
+      return res.status(400).json({
+        error: 'Invalid query parameter format',
+        details: 'Ensure location codes are strings and dates are in YYYY-MM-DD format',
+      });
+    }
+
+    if (isNaN(adults) || adults < 1 || isNaN(max) || max < 1) {
+      return res.status(400).json({
+        error: 'Invalid query parameter values',
+        details: 'adults and max must be positive integers',
+      });
+    }
+
+    // Retrieve Amadeus API token
+    const tokenUrl = process.env.TOKEN_URL;
+    const clientId = process.env.AMADEUS_CLIENT_ID;
+    const clientSecret = process.env.AMADEUS_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({
+        error: 'Server configuration error',
+        details: 'Amadeus API credentials are missing',
+      });
+    }
+
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+    const tokenData = await tokenResponse.json();
+
+    if (!tokenResponse.ok || !tokenData.access_token) {
+      console.error('Amadeus token error:', {
+        status: tokenResponse.status,
+        statusText: tokenResponse.statusText,
+        error: tokenData.error || 'Unknown error',
+        details: tokenData.error_description || 'No details provided',
+      });
+      return res.status(500).json({
+        error: 'Failed to authenticate with Amadeus API',
+        details: tokenData.error_description || 'Authentication error',
+      });
+    }
+
+    // Construct Amadeus API URL
+    const queryParams = new URLSearchParams({
+      originLocationCode,
+      destinationLocationCode,
+      departureDate,
+      adults: adults.toString(),
+      max: max.toString(),
+    });
+
+    if (returnDate) {
+      queryParams.append('returnDate', returnDate);
+    }
+
+    const amadeusApiUrl = `https://test.api.amadeus.com/v2/shopping/flight-offers?${queryParams.toString()}`;
+
+    // Send request to Amadeus API
+    const flightResponse = await fetch(amadeusApiUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const flightData = await flightResponse.json();
+
+    if (flightResponse.ok) {
+      // Map response to desired format
+      const response = {
+        data: flightData.data || [],
+        meta: flightData.meta || {},
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } else {
+      // Log and return error
+      console.error('Amadeus API error:', {
+        status: flightResponse.status,
+        statusText: flightResponse.statusText,
+        error: flightData.error || 'Unknown error',
+        details: flightData.error_description || 'No details provided',
+        requestQuery: req.query,
+      });
+      return res.status(flightResponse.status).json({
+        error: 'Amadeus API error',
+        details: flightData.error_description || 'Failed to fetch flight offers',
+      });
+    }
+  } catch (error) {
+    // Handle network or unexpected errors
+    console.error('Error in flight_offers:', {
+      message: error.message,
+      stack: error.stack,
+      requestQuery: req.query,
+    });
+    res.status(500).json({
+      error: 'Failed to process flight offers request',
+      details: error.message,
+    });
+  }
+};
 }
 module.exports = new homeControllers();
