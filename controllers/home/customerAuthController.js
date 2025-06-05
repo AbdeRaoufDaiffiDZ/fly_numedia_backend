@@ -8,7 +8,7 @@ const {
 } = require("../../controllers/notification/notificationController");
 class customerAuthController {
   customer_register = async (req, res) => {
-    const { name, email, phone, password } = req.body;
+    const { firstName, lastName, email, phone, password } = req.body;
     try {
       const customer = await customerModel.findOne({ email });
       const role = "customer";
@@ -16,13 +16,21 @@ class customerAuthController {
         return responseReturn(res, 404, { error: "L'e-mail existe déjà" });
       }
 
+      if (!firstName || !lastName || !email || !password) {
+        return responseReturn(res, 404, { error: "certains champs manquent!!" });
+
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
       // Create new customer
       const createCustomer = await customerModel.create({
-        name: name.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         email: email.trim(),
         phone: phone.trim(),
         role: "customer",
-        password: await bcrypt.hash(password, 10),
+        password: hashedPassword,
         method: "manual",
       });
 
@@ -34,7 +42,11 @@ class customerAuthController {
       // Generate a token
       const token = await createToken({
         id: createCustomer.id,
-        name: createCustomer.name,
+        firstName: createCustomer.firstName,
+        lastName: createCustomer.lastName,
+        sex: createCustomer.sex,
+        dateOfBirth: createCustomer.dateOfBirth,
+        nationality: createCustomer.nationality,
         email: createCustomer.email,
         phone: createCustomer.phone,
         method: createCustomer.method,
@@ -52,20 +64,20 @@ class customerAuthController {
       const titleAdmin = "Vous avez une nouvelle inscription client";
       const descriptionAdmin =
         "Un nouvel utilisateur s'est inscrit sur la plateforme. Voici les détails de l'utilisateur:";
-      const details = { name, email, phone };
+      const details = { lastName, email, phone };
       console.log("try to send email");
-      await send_email({
-        adminEmail,
-        subject: subjectAdmin,
-        title: titleAdmin,
-        description: descriptionAdmin,
-        details: details,
-        sendToAdmin: true,
-        sendToSellers: false,
-        sendToClient: false,
-      });
+      // await send_email({
+      //   adminEmail,
+      //   subject: subjectAdmin,
+      //   title: titleAdmin,
+      //   description: descriptionAdmin,
+      //   details: details,
+      //   sendToAdmin: true,
+      //   sendToSellers: false,
+      //   sendToClient: false,
+      // });
 
-      // Send a welcome email to the new user
+      // // Send a welcome email to the new user
       const clientEmail = email;
       const subjectClient = "Bienvenue sur Fly Numedia";
       const titleClient = "Merci pour votre inscription!";
@@ -107,8 +119,13 @@ class customerAuthController {
         if (match) {
           const token = await createToken({
             id: customer.id,
-            name: customer.name,
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            sex: customer.sex,
+            dateOfBirth: customer.dateOfBirth,
+            nationality: customer.nationality,
             email: customer.email,
+            phone: customer.phone,
             method: customer.method,
             role: customer.role,
           });
@@ -225,11 +242,16 @@ class customerAuthController {
 
       await customer.save();
       const token = await createToken({
-        id: customer.id,
-        name: customer.name,
-        email: customer.email,
-        method: customer.method,
-        role: customer.role,
+        id: createCustomer.id,
+        firstName: createCustomer.firstName,
+        lastName: createCustomer.lastName,
+        sex: createCustomer.sex,
+        dateOfBirth: createCustomer.dateOfBirth,
+        nationality: createCustomer.nationality,
+        email: createCustomer.email,
+        phone: createCustomer.phone,
+        method: createCustomer.method,
+        role: createCustomer.role,
       });
       res.cookie("customerToken", token, {
         expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
@@ -266,6 +288,8 @@ class customerAuthController {
     });
     responseReturn(res, 200, { message: "Logout success" });
   };
+
+
 }
 
 module.exports = new customerAuthController();

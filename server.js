@@ -1,5 +1,5 @@
 const express = require("express");
-const { dbConnect } = require("./utiles/db-test");
+const { dbConnect } = require("./utiles/db");
 const app = express();
 const cors = require("cors");
 const http = require("http");

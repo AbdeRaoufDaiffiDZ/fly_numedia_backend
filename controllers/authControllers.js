@@ -1,7 +1,6 @@
 const adminModel = require("../models/adminModel");
 const sellerModel = require("../models/sellerModel");
 const customoerModel = require("../models/customerModel");
-
 const sellerCustomerModel = require("../models/chat/sellerCustomerModel");
 const bcrpty = require("bcrypt");
 const formidable = require("formidable");
@@ -161,6 +160,75 @@ class authControllers {
       responseReturn(res, 500, { error: "Internal server error" });
     }
   };
+
+  customer_edit_profile = async (req, res) => {
+    const { firstName, lastName, sex, dateOfBirth, nationality, passportNumber, passportExpirationDate, email, phone} = req.body;
+    try {
+      let customer = await customoerModel.findOne({ email });
+      const role = "customer";
+      if (!customer) {
+        return responseReturn(res, 404, { error: "L'e-mail n'existe pas" });
+      }
+      console.log(lastName);
+      // Create new customer
+      customer.firstName = firstName;
+      customer.lastName = lastName;
+      customer.sex = sex;
+      customer.dateOfBirth = dateOfBirth;
+      customer.nationality = nationality;
+      if (!passportNumber)
+        customer.passportNumber = passportNumber;
+      if (!passportExpirationDate)
+        customer.passportExpirationDate = passportExpirationDate
+      customer.phone = phone;
+      await customer.save();
+
+      // Create related sellerCustomer entry
+      const details = { lastName, email, phone };
+
+
+      // Generate a token
+      const token = await createToken({
+        id: customer.id,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        sex: customer.sex,
+        dateOfBirth: customer.dateOfBirth,
+        nationality: customer.nationality,
+        email: customer.email,
+        phone: customer.phone,
+        method: customer.method,
+        role: customer.role,
+      });
+
+      // Set the cookie with the token
+      res.cookie("customerToken", token, {
+        expires: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), // expires in 1 day
+      });
+      // Send a welcome email to the new user
+      const clientEmail = email;
+      const subjectClient = "Les informations du compte ont été modifiées Fly Numedia";
+      const titleClient = "quelqu'un a modifié les informations de votre profil";
+      const descriptionClient =
+        "vos informations de compte ont été modifiées, si vous n'êtes pas vous qui avez modifié, veuillez nous contacter dès que possible";
+      await send_email({
+        clientEmail,
+        subject: subjectClient,
+        title: titleClient,
+        description: descriptionClient,
+        details: details,
+        sendToAdmin: false,
+        sendToSellers: false,
+        sendToClient: true,
+      });
+      // Return success response
+      responseReturn(res, 201, { message: "user info updated", token });
+    } catch (error) {
+      console.error("Error in user info update:", error.message);
+      responseReturn(res, 500, { error: "Internal server error" });
+    }
+  };
+
 
   profile_image_upload = async (req, res) => {
     const { id } = req;

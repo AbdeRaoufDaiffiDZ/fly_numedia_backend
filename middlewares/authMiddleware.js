@@ -14,6 +14,7 @@ module.exports.authMiddleware = async (req, res, next) => {
       req.id = deCodeToken.id;
       next();
     } catch (error) {
+      console.log("accesstoken getted but not valid");
       return res.status(409).json({ error: "Please login" });
     }
   }
