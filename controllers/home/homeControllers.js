@@ -3,6 +3,7 @@ const productModel = require("../../models/productModel");
 const queryProducts = require("../../utiles/queryProducts");
 const reviewModel = require("../../models/reviewModel");
 const axios = require("axios");
+const { send_email } = require("../notification/notificationController");
 
 const moment = require("moment");
 const {
@@ -274,74 +275,6 @@ class homeControllers {
     }
   };
 
-  // query_products = async (req, res) => {
-  //   const parPage = 12;
-  //   const page = parseInt(req.query.page) || 1;
-
-  //   try {
-  //     const filterConditions = [];
-
-  //     // Price filter
-  //     const minPrice = parseFloat(req.query.minPrice);
-  //     const maxPrice = parseFloat(req.query.maxPrice);
-  //     if (!isNaN(minPrice) && !isNaN(maxPrice)) {
-  //       filterConditions.push({ price: { $gte: minPrice, $lte: maxPrice } });
-  //     }
-
-  //     // Category filter
-  //     if (req.query.category && req.query.category.trim() !== "") {
-  //       filterConditions.push({ category: req.query.category.trim() });
-  //     }
-
-  //     // Rating filter
-  //     const minRating = parseFloat(req.query.rating);
-  //     if (!isNaN(minRating) && minRating > 0) {
-  //       filterConditions.push({ rating: { $gte: minRating } });
-  //     }
-
-  //     // Search filter
-  //     if (req.query.searchValue && req.query.searchValue.trim() !== "") {
-  //       filterConditions.push({ $text: { $search: req.query.searchValue.trim() } });
-  //     }
-
-  //     // Build the final query
-  //     const query = filterConditions.length > 0 ? { $and: filterConditions } : {};
-
-  //     // Build sort object
-  //     let sortOption = { createdAt: -1 };
-  //     if (req.query.sortPrice === 'low-to-high') {
-  //       sortOption = { price: 1 };
-  //     } else if (req.query.sortPrice === 'high-to-low') {
-  //       sortOption = { price: -1 };
-  //     }
-
-  //     // Debug (only in development)
-  //     if (process.env.NODE_ENV !== 'production') {
-  //       console.log('MongoDB Query:', JSON.stringify(query, null, 2));
-  //       console.log('Sort Option:', sortOption);
-  //     }
-
-  //     // Execute queries
-  //     const totalProduct = await productModel.countDocuments(query);
-  //     const products = await productModel
-  //       .find(query)
-  //       .sort(sortOption)
-  //       .skip((page - 1) * parPage)
-  //       .limit(parPage)
-  //       .lean();
-
-  //     return res.status(200).json({
-  //       products,
-  //       totalProduct,
-  //       parPage,
-  //     });
-
-  //   } catch (error) {
-  //     console.error('Error in query_products:', error.message);
-  //     return res.status(500).json({ error: 'Internal server error' });
-  //   }
-  // };
-
   submit_review = async (req, res) => {
     const { name, rating, review, productId } = req.body;
     //console.log(req.body);
@@ -494,144 +427,162 @@ class homeControllers {
   //   };
 
   // chatBoot handles incoming chat requests, including text and image messages,
-// and manages sessions with the AI backend.
-chatBoot = async (req, res) => {
+  // and manages sessions with the AI backend.
+  chatBoot = async (req, res) => {
     try {
-        // Destructure request body for clarity and direct access to inputs
-        const { query, session_id, image_type, image_data, newSession } = req.body;
+      // Destructure request body for clarity and direct access to inputs
+      const { query, session_id, image_type, image_data, newSession, email, langCode } = req.body;
+      // Constants for API URLs, fetched from environment variables
+      const AI_CHAT_API_URL = process.env.AI_CHAT_API_URL;
+      const AI_CHAT_API_NEW_SESSION_URL = process.env.AI_CHAT_API_NEW_SESSION_URL;
 
-        // Constants for API URLs, fetched from environment variables
-        const AI_CHAT_API_URL = process.env.AI_CHAT_API_URL;
-        const AI_CHAT_API_NEW_SESSION_URL = process.env.AI_CHAT_API_NEW_SESSION_URL;
+      // Basic input validation: A query or a new session request is required
+      if (!query && !newSession && !image_data) {
+        return res.status(400).json({
+          error: "Missing 'query', 'newSession' flag, or 'image_data' in request.",
+          details: "Either a text query, a new session request, or image data must be provided."
+        });
+      }
 
-        // Basic input validation: A query or a new session request is required
-        if (!query && !newSession && !image_data) {
-            return res.status(400).json({
-                error: "Missing 'query', 'newSession' flag, or 'image_data' in request.",
-                details: "Either a text query, a new session request, or image data must be provided."
-            });
-        }
+      // Initialize the response object structure.
+      // This will be populated with data from the AI API and returned to the client.
+      let answer = {
+        user_query: query || "New session request", // Reflects user intent or default for new session
+        message: null, // AI's human-readable response
+        tool_response: null, // Structured data from AI tools (e.g., flight data)
+        timestamp: new Date().toISOString(), // Server-side timestamp
+        session_id: session_id || null, // Current or newly acquired session ID
+        query_lang: null, // Language detected/used by AI
+        flight_search_examples: null // Examples provided for flight search
+      };
 
-        // Initialize the response object structure.
-        // This will be populated with data from the AI API and returned to the client.
-        let answer = {
-            user_query: query || "New session request", // Reflects user intent or default for new session
-            message: null, // AI's human-readable response
-            tool_response: null, // Structured data from AI tools (e.g., flight data)
-            timestamp: new Date().toISOString(), // Server-side timestamp
-            session_id: session_id || null, // Current or newly acquired session ID
-            query_lang: null, // Language detected/used by AI
-            flight_search_examples: null // Examples provided for flight search
-        };
-
-        // --- Session Management Logic ---
-        // If no session_id is provided or a new session is explicitly requested,
-        // call the new session API to establish a context.
-        if (!session_id || newSession) {
-            try {
-                const sessionResponse = await fetch(AI_CHAT_API_NEW_SESSION_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    // Send a minimal body for new session creation, as expected by the API
-                    body: JSON.stringify({ message: "new session request" }),
-                });
-
-                // Check if the session API call was successful
-                if (!sessionResponse.ok) {
-                    const errorData = await sessionResponse.json();
-                    throw new Error(
-                        `Failed to get new session ID: ${sessionResponse.status} - ${errorData.detail || errorData.error || 'Unknown error'}`
-                    );
-                }
-
-                const data = await sessionResponse.json();
-                console.log("New session response:", data);
-
-                // Update the answer object with the new session ID and examples
-                answer.session_id = data.session_id;
-                answer.flight_search_examples = data.flight_search_examples;
-
-                // If only a new session was requested without an accompanying query,
-                // respond immediately with the session details.
-                if (newSession && !query && !image_data) {
-                    return res.status(200).json(answer);
-                }
-
-            } catch (sessionError) {
-                console.error("Error getting new session ID:", sessionError);
-                return res.status(500).json({
-                    error: "Failed to establish chat session.",
-                    details: sessionError.message,
-                });
-            }
-        }
-
-        // --- AI Chat API Call Logic ---
-        // This block executes only if a query or image data exists (i.e., not just a new session request).
-        // Ensure a session ID is available before making the AI chat call.
-        if (!answer.session_id) {
-            return res.status(500).json({
-                error: "Internal error: Session ID not established for chat query.",
-                details: "Please try starting a new conversation.",
-            });
-        }
-
-        // Prepare the payload for the AI chat API, including image data if present
-        const aiPayload = {
-            query, // This will be null if only image_data is provided
-            session_id: answer.session_id,
-            image_type, // Will be null if no image is sent
-            image_data, // Will be null if no image is sent
-        };
-
-        const aiResponse = await fetch(AI_CHAT_API_URL, {
+      // --- Session Management Logic ---
+      // If no session_id is provided or a new session is explicitly requested,
+      // call the new session API to establish a context.
+      if (!session_id || newSession) {
+        try {
+          const sessionResponse = await fetch(AI_CHAT_API_NEW_SESSION_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(aiPayload),
-        });
+            // Send a minimal body for new session creation, as expected by the API
+            body: JSON.stringify({ message: "new session request", lang: langCode }),
+          });
 
-        const aiData = await aiResponse.json();
-        console.log("AI API response:", aiData);
+          // Check if the session API call was successful
+          if (!sessionResponse.ok) {
+            const errorData = await sessionResponse.json();
+            throw new Error(
+              `Failed to get new session ID: ${sessionResponse.status} - ${errorData.detail || errorData.error || 'Unknown error'}`
+            );
+          }
 
-        // Process AI response based on HTTP status
-        if (aiResponse.ok) {
-            // Validate essential fields in the AI response
-            if (!aiData.human_response) {
-                throw new Error("Invalid response from AI API: 'human_response' field missing.");
-            }
-            // Populate the answer object with AI's response
-            answer.message = aiData.human_response;
-            answer.tool_response = aiData.tool_response; // Data from tools like flight search
-            answer.query_lang = aiData.query_lang || "en"; // Default to English if language not provided
+          const data = await sessionResponse.json();
+          console.log(data);
+          // Update the answer object with the new session ID and examples
+          answer.session_id = data.session_id;
+          answer.message = data.human_response;
+          answer.flight_search_examples = data.flight_search_examples;
+          answer.query_lang = data.lang;
+
+          // If only a new session was requested without an accompanying query,
+          // respond immediately with the session details.
+          if (newSession && !query && !image_data) {
             return res.status(200).json(answer);
-        } else {
-            // Handle specific AI API errors
-            console.error("AI API error response:", {
-                status: aiResponse.status,
-                statusText: aiResponse.statusText,
-                error: aiData.error || "Unknown AI API error",
-                details: aiData.details || "No specific details provided by AI API",
-                requestBody: req.body, // Log the problematic request body
-            });
-            return res.status(aiResponse.status).json({
-                error: "AI API error",
-                details: aiData.error || "Failed to process request with AI.",
-            });
+          }
+
+        } catch (sessionError) {
+          console.error("Error getting new session ID:", sessionError);
+          return res.status(500).json({
+            error: "Failed to establish chat session.",
+            details: sessionError.message,
+          });
+        }
+      }
+
+      // --- AI Chat API Call Logic ---
+      // This block executes only if a query or image data exists (i.e., not just a new session request).
+      // Ensure a session ID is available before making the AI chat call.
+      if (!answer.session_id) {
+        return res.status(500).json({
+          error: "Internal error: Session ID not established for chat query.",
+          details: "Please try starting a new conversation.",
+        });
+      }
+
+      // Prepare the payload for the AI chat API, including image data if present
+      const aiPayload = {
+        query, // This will be null if only image_data is provided
+        session_id: answer.session_id,
+        image_type, // Will be null if no image is sent
+        image_data, // Will be null if no image is sent
+      };
+
+      const aiResponse = await fetch(AI_CHAT_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(aiPayload),
+      });
+
+      const aiData = await aiResponse.json();
+      console.log(aiData);
+
+      // Process AI response based on HTTP status
+      if (aiResponse.ok) {
+        // Validate essential fields in the AI response
+        if (!aiData.human_response) {
+          throw new Error("Invalid response from AI API: 'human_response' field missing.");
         }
 
+        if (email != null && aiData.tool_response == 'book') {
+          const sellerEmails = [email];
+          const subjectPartner = "Your flight booking is confirmed. Thank you for choosing us! Your flight ticket number is [Your Flight Ticket Number]";
+          const titlePartner = "Flight Booking Confirmed!";
+          const descriptionPartner = "Your flight has been successfully booked. Thank you for choosing Fly Numedia! Here are your booking details:";
+          await send_email({
+            sellerEmails,
+            subject: subjectPartner,
+            title: titlePartner,
+            description: descriptionPartner,
+            details: details,
+            sendToAdmin: false,
+            sendToSellers: true,
+            sendToClient: false,
+          });
+
+        }
+        // Populate the answer object with AI's response
+        answer.message = aiData.human_response;
+        answer.tool_response = aiData.tool_response; // Data from tools like flight search
+        answer.query_lang = aiData.query_lang || "en"; // Default to English if language not provided
+        return res.status(200).json(answer);
+      } else {
+        // Handle specific AI API errors
+        console.error("AI API error response:", {
+          status: aiResponse.status,
+          statusText: aiResponse.statusText,
+          error: aiData.error || "Unknown AI API error",
+          details: aiData.details || "No specific details provided by AI API",
+          requestBody: req.body, // Log the problematic request body
+        });
+        return res.status(aiResponse.status).json({
+          error: "AI API error",
+          details: aiData.error || "Failed to process request with AI.",
+        });
+      }
+
     } catch (error) {
-        // Global catch-all for any unexpected errors during the process
-        console.error("Unexpected error in chatBoot:", {
-            message: error.message,
-            stack: error.stack,
-            requestBody: req.body,
-        });
-        res.status(500).json({
-            error: "Internal server error.",
-            details: error.message,
-        });
+      // Global catch-all for any unexpected errors during the process
+      console.error("Unexpected error in chatBoot:", {
+        message: error.message,
+        stack: error.stack,
+        requestBody: req.body,
+      });
+      res.status(500).json({
+        error: "Internal server error.",
+        details: error.message,
+      });
     }
-};
+  };
 
 
   flight_offers = async (req, res) => {
