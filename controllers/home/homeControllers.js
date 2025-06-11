@@ -477,7 +477,7 @@ class homeControllers {
           }
 
           const data = await sessionResponse.json();
-          console.log(data);
+          // console.log(data);
           // Update the answer object with the new session ID and examples
           answer.session_id = data.session_id;
           answer.message = data.human_response;
@@ -524,7 +524,7 @@ class homeControllers {
       });
 
       const aiData = await aiResponse.json();
-      console.log(aiData);
+      // console.log(aiData);
 
       // Process AI response based on HTTP status
       if (aiResponse.ok) {
