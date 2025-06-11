@@ -10,6 +10,12 @@ const socket = require("socket.io");
 
 const server = http.createServer(app);
 
+// Before your routes, configure express.json() to allow larger payloads
+// For example, to allow up to 50MB (a common size for base64 images)
+app.use(express.json({ limit: '50mb' })); // Increase the limit as needed
+app.use(express.urlencoded({ limit: '50mb', extended: true })); // Also for URL-encoded bodies if applicable
+
+app.use(cors()); // Use cors middleware
 app.use(
   cors({
     origin: ["http://localhost:3000", "http://localhost:3001"],

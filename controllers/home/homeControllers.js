@@ -493,112 +493,146 @@ class homeControllers {
   //     }
   //   };
 
-  chatBoot = async (req, res) => {
+  // chatBoot handles incoming chat requests, including text and image messages,
+// and manages sessions with the AI backend.
+chatBoot = async (req, res) => {
     try {
-      let { query, session_id, image_type, image_data, newSession } = req.body; // Destructure directly
+        // Destructure request body for clarity and direct access to inputs
+        const { query, session_id, image_type, image_data, newSession } = req.body;
 
-      // Basic input validation
-      if (!query && !newSession) { // A query is needed unless starting a new session
-        return res.status(400).json({ error: "Missing 'query' or 'newSession' flag in request." });
-      }
+        // Constants for API URLs, fetched from environment variables
+        const AI_CHAT_API_URL = process.env.AI_CHAT_API_URL;
+        const AI_CHAT_API_NEW_SESSION_URL = process.env.AI_CHAT_API_NEW_SESSION_URL;
 
-      const AI_CHAT_API_URL = process.env.AI_CHAT_API_URL;
-      const AI_CHAT_API_NEW_SESSION_URL = process.env.AI_CHAT_API_NEW_SESSION_URL; // Renamed for clarity
+        // Basic input validation: A query or a new session request is required
+        if (!query && !newSession && !image_data) {
+            return res.status(400).json({
+                error: "Missing 'query', 'newSession' flag, or 'image_data' in request.",
+                details: "Either a text query, a new session request, or image data must be provided."
+            });
+        }
 
-      // Initialize answer structure. 'message' will hold AI's human response, 'tool_response' for structured data.
-      let answer = {
-        user_query: query, // Store the original user query
-        message: null,
-        tool_response: null,
-        timestamp: new Date().toISOString(),
-        session_id: session_id || null, // Initialize session_id
-        query_lang: null, // To be potentially set by AI API
-        flight_search_examples: null
-      };
+        // Initialize the response object structure.
+        // This will be populated with data from the AI API and returned to the client.
+        let answer = {
+            user_query: query || "New session request", // Reflects user intent or default for new session
+            message: null, // AI's human-readable response
+            tool_response: null, // Structured data from AI tools (e.g., flight data)
+            timestamp: new Date().toISOString(), // Server-side timestamp
+            session_id: session_id || null, // Current or newly acquired session ID
+            query_lang: null, // Language detected/used by AI
+            flight_search_examples: null // Examples provided for flight search
+        };
 
-      // Handle new session request or get a session_id if none exists
-      if (!session_id || newSession) {
-        try {
-          const sessionResponse = await fetch(AI_CHAT_API_NEW_SESSION_URL, {
+        // --- Session Management Logic ---
+        // If no session_id is provided or a new session is explicitly requested,
+        // call the new session API to establish a context.
+        if (!session_id || newSession) {
+            try {
+                const sessionResponse = await fetch(AI_CHAT_API_NEW_SESSION_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    // Send a minimal body for new session creation, as expected by the API
+                    body: JSON.stringify({ message: "new session request" }),
+                });
+
+                // Check if the session API call was successful
+                if (!sessionResponse.ok) {
+                    const errorData = await sessionResponse.json();
+                    throw new Error(
+                        `Failed to get new session ID: ${sessionResponse.status} - ${errorData.detail || errorData.error || 'Unknown error'}`
+                    );
+                }
+
+                const data = await sessionResponse.json();
+                console.log("New session response:", data);
+
+                // Update the answer object with the new session ID and examples
+                answer.session_id = data.session_id;
+                answer.flight_search_examples = data.flight_search_examples;
+
+                // If only a new session was requested without an accompanying query,
+                // respond immediately with the session details.
+                if (newSession && !query && !image_data) {
+                    return res.status(200).json(answer);
+                }
+
+            } catch (sessionError) {
+                console.error("Error getting new session ID:", sessionError);
+                return res.status(500).json({
+                    error: "Failed to establish chat session.",
+                    details: sessionError.message,
+                });
+            }
+        }
+
+        // --- AI Chat API Call Logic ---
+        // This block executes only if a query or image data exists (i.e., not just a new session request).
+        // Ensure a session ID is available before making the AI chat call.
+        if (!answer.session_id) {
+            return res.status(500).json({
+                error: "Internal error: Session ID not established for chat query.",
+                details: "Please try starting a new conversation.",
+            });
+        }
+
+        // Prepare the payload for the AI chat API, including image data if present
+        const aiPayload = {
+            query, // This will be null if only image_data is provided
+            session_id: answer.session_id,
+            image_type, // Will be null if no image is sent
+            image_data, // Will be null if no image is sent
+        };
+
+        const aiResponse = await fetch(AI_CHAT_API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            // Send an empty object or a placeholder as needed by your new session API
-            body: JSON.stringify({ message: "new session request" }), // Or just {} if API allows
-          });
-          if (!sessionResponse.ok) {
-            const errorData = await sessionResponse.json();
-            throw new Error(`Failed to get new session ID: ${sessionResponse.status} - ${errorData.detail || errorData.error || 'Unknown error'}`);
-          }
-          const { session_id: newId, flight_search_examples } = await sessionResponse.json(); // Extract new session_id
-          answer.session_id = newId; // Update session_id in our answer object
-          answer.flight_search_examples = flight_search_examples;
-          console.log(answer);
-
-          if (newSession && !query) { // If only new session was requested without a query
-            return res.status(200).json(answer);
-          }
-
-        } catch (sessionError) {
-          console.error("Error getting new session ID:", sessionError);
-          return res.status(500).json({
-            error: "Failed to establish chat session.",
-            details: sessionError.message,
-          });
-        }
-      }
-
-      // Proceed with AI chat API call only if a query exists
-      if (query) {
-        const aiResponse = await fetch(AI_CHAT_API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, session_id: answer.session_id, image_type, image_data }),
+            body: JSON.stringify(aiPayload),
         });
 
         const aiData = await aiResponse.json();
+        console.log("AI API response:", aiData);
 
+        // Process AI response based on HTTP status
         if (aiResponse.ok) {
-          if (!aiData.human_response) {
-            throw new Error("Invalid response from AI API: 'human_response' field missing.");
-          }
-          // Map AI response to our answer format
-          answer.message = aiData.human_response;
-          answer.tool_response = aiData.tool_response;
-          answer.query_lang = aiData.query_lang || "en"; // Assume 'en' if not provided
-          return res.status(200).json(answer)
+            // Validate essential fields in the AI response
+            if (!aiData.human_response) {
+                throw new Error("Invalid response from AI API: 'human_response' field missing.");
+            }
+            // Populate the answer object with AI's response
+            answer.message = aiData.human_response;
+            answer.tool_response = aiData.tool_response; // Data from tools like flight search
+            answer.query_lang = aiData.query_lang || "en"; // Default to English if language not provided
+            return res.status(200).json(answer);
         } else {
-          // Log and return detailed AI API error
-          console.error("AI API error response:", {
-            status: aiResponse.status,
-            statusText: aiResponse.statusText,
-            error: aiData.error || "Unknown AI API error",
-            details: aiData.details || "No specific details provided by AI API",
-            requestBody: req.body,
-          });
-          return res.status(aiResponse.status).json({
-            error: "AI API error",
-            details: aiData.error || "Failed to process request with AI.",
-          });
+            // Handle specific AI API errors
+            console.error("AI API error response:", {
+                status: aiResponse.status,
+                statusText: aiResponse.statusText,
+                error: aiData.error || "Unknown AI API error",
+                details: aiData.details || "No specific details provided by AI API",
+                requestBody: req.body, // Log the problematic request body
+            });
+            return res.status(aiResponse.status).json({
+                error: "AI API error",
+                details: aiData.error || "Failed to process request with AI.",
+            });
         }
-      } else {
-        // This case should ideally be caught by the initial input validation,
-        // but included for robustness if logic paths diverge.
-        return res.status(400).json({ error: "No query provided after session initialization." });
-      }
 
     } catch (error) {
-      // Catch-all for unexpected errors (network issues, etc.)
-      console.error("Unexpected error in chatBoot:", {
-        message: error.message,
-        stack: error.stack,
-        requestBody: req.body,
-      });
-      res.status(500).json({
-        error: "Internal server error.",
-        details: error.message,
-      });
+        // Global catch-all for any unexpected errors during the process
+        console.error("Unexpected error in chatBoot:", {
+            message: error.message,
+            stack: error.stack,
+            requestBody: req.body,
+        });
+        res.status(500).json({
+            error: "Internal server error.",
+            details: error.message,
+        });
     }
-  };
+};
+
 
   flight_offers = async (req, res) => {
     try {
