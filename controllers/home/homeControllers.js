@@ -553,6 +553,12 @@ class homeControllers {
         // Populate the answer object with AI's response
         answer.message = aiData.human_response;
         answer.tool_response = aiData.tool_response; // Data from tools like flight search
+        console.log(answer);
+
+        if (answer.tool_response != null)
+          if (answer.tool_response.data != null)
+            if (answer.tool_response.data.result != null)
+              console.log(answer.tool_response.data.result);
         answer.query_lang = aiData.query_lang || "en"; // Default to English if language not provided
         return res.status(200).json(answer);
       } else {
