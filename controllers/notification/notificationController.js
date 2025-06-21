@@ -2,7 +2,7 @@ const nodemailer = require("nodemailer");
 const fs = require("fs");
 const path = require("path");
 
-// Email sending function with flexibility
+
 const send_email = async ({
   adminEmail, // Default admin email
   sellerEmails = [], // Optional partner email
@@ -15,8 +15,20 @@ const send_email = async ({
   sendToAdmin = true, // Whether to send email to admin
   sendToSellers = true, // Whether to send email to admin
   sendToClient = true, // Whether to send email to client
+  isBook = false,
+  logoPath = path.join(__dirname, 'assets', 'logo.png') // <--- Add this new parameter for local logo path
 }) => {
   try {
+    // Dynamically import nodemailer if not already available in the scope
+    // This assumes `nodemailer` is an installed dependency in your project.
+    const nodemailer = await import('nodemailer');
+    const path = await import('path'); // Ensure 'path' module is available
+    console.log(clientEmail);
+    if (details != null) {
+      console.log(details.firstName);
+      console.log(details.passportNumber);
+      console.log(description);
+    }
     // Configure the transporter
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
@@ -28,7 +40,7 @@ const send_email = async ({
       },
     });
 
-    // Validate attachments
+    // Validate and prepare attachments
     const validAttachments = attachments
       .filter(
         (file) =>
@@ -39,7 +51,20 @@ const send_email = async ({
         path: file.path,
       }));
 
-    console.log("Valid attachments:", validAttachments);
+    // --- Add the local logo as an embedded attachment ---
+    const logoCid = 'uniqueLogoCid'; // A unique content ID for your logo
+
+    // Ensure logoPath is provided and valid before pushing
+    if (logoPath) {
+      validAttachments.push({
+        filename: 'logo.png', // The filename that will appear in the attachment (can be anything)
+        path: logoPath,        // The actual local path to your logo file
+        cid: logoCid           // This Content ID allows referencing it in the HTML
+      });
+    }
+    // --- End of logo embedding setup ---
+
+    console.log("Valid attachments (including logo):", validAttachments);
 
     // Prepare email options for each recipient
     const recipients = [];
@@ -49,128 +74,143 @@ const send_email = async ({
     }
     if (sendToClient && clientEmail) recipients.push(clientEmail);
 
+    const appColor = '#3C59D8'; // Main blue color
+    const appColorDark = '#2A44B0'; // A darker shade for the gradient
+    const lightAppColor = '#ffffff'; // A lighter shade for backgrounds
+    const darkTextColor = '#333333';
+    const lightTextColor = '#ffffff';
+    const borderColor = 'rgba(60, 89, 216, 0.5)'; // A slightly transparent border
+
     const mailOptions = recipients.map((toEmail) => ({
       from: `"Fly Numedia" <${process.env.SMTP_EMAIL}>`,
       to: toEmail,
       subject,
       html: `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="UTF-8" />
-              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-              <title>${title}</title>
-              <style>
-                body {
-                  background-color: #f2f5f8;
-                  margin: 0;
-                  padding: 20px 0;
-                  font-family: Arial, sans-serif;
-                }
-                .container {
-                  max-width: 600px;
-                  width: 90%;
-                  margin: 20px auto;
-                  background-color: #deecff;
-                  border: 2px solid #ff7ff6;
-                  border-radius: 20px;
-                  overflow: hidden;
-                }
-                .header {
-                  text-align: center;
-                  padding: 20px;
-                  background: rgb(222, 236, 255);
-                  background: linear-gradient(0deg, #120004 0%, #3f028d 100%);
-                  border-bottom: 2px solid #ff7ff6;
-                }
-                .header img {
-                  height: 55px;
-                  max-width: 180px;
-                  object-fit: contain;
-                }
-                .content {
-                  padding: 30px 20px;
-                }
-                .content p {
-                  margin: 10px 0;
-                  color: #3a0736;
-                }
-                .content span {
-                  font-weight: bold;
-                }
-                .footer {
-                  text-align: center;
-                  padding: 20px;
-                  background: #deecff;
-                  background: linear-gradient(0deg, #3f028d 0%, #120004 100%);
-                  border-top: 2px solid #ff7ff6;
-                  font-size: 14px;
-                }
-                .footer h3 {
-                  margin: 3px 0;
-                  color: #deecff;
-                  font-size: 14px;
-                }
-                .footer a {
-                  color: #ff7ff6;
-                  text-decoration: none;
-                  font-size: 14px;
-                  margin-top: 10px;
-                }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <!-- Header Section -->
-                <div class="header">
-                  <img src="https://flynumedia.com/images/logo.png" alt="Fly Numedia" />
-                </div>
-          
-                <!-- Content Section -->
-                <div class="content">
-                  <p><span>${title}</span></p>
-                  <p><span>-</span> ${description}</p>
-                  <p><span>Nom:</span> ${details.name}</p>
-                  <p><span>Email:</span> ${details.email}</p>
-                  <p>${
-                    details.phone
-                      ? `<span>Téléphone:</span> ${details.phone}`
-                      : ""
-                  }</p>
-                  <p>${
-                    details.role ? `<span>Rôle:</span> ${details.role}` : ""
-                  }</p>
-                  <p>${
-                    details.paymentStatus
-                      ? `<span>Paiement:</span> ${details.paymentStatus}`
-                      : ""
-                  }</p>
-                  <p>${
-                    details.address
-                      ? `<span>Addresse:</span> ${details.address}`
-                      : ""
-                  }</p>
-                  <p>${
-                    details.price ? `<span>Prix:</span> ${details.price}` : ""
-                  }</p>
-                  <p>${
-                    details.orderId ? `<span>ID:</span> ${details.orderId}` : ""
-                  }</p>
-                  
-                </div>
-          
-                <div class="footer">
-                  <h3>Merci d'avoir choisi Fly Numedia!</h3>
-                  <h3>Cordialement, L'équipe FLY NUMEDIA</h3>
-                  <a href="https://flynumedia.com/" target="_blank">flynumedia.com</a>
-                </div>
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>${title}</title>
+            <style>
+              body {
+                background-color: #f7f9fc; /* Lighter background */
+                margin: 0;
+                padding: 20px 0;
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; /* Modern font */
+                line-height: 1.6;
+                color: ${darkTextColor};
+              }
+              .container {
+                max-width: 600px;
+                width: 90%;
+                margin: 20px auto;
+                background-color: ${lightTextColor};
+                border: 1px solid ${borderColor}; /* Softer border */
+                border-radius: 12px; /* More modern rounded corners */
+                overflow: hidden;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Subtle shadow */
+              }
+              .header {
+                text-align: center;
+                padding: 30px 20px;
+                /* Gradient background */
+                background: linear-gradient(to right, ${appColor}, ${appColorDark});
+                color: ${lightTextColor};
+                border-bottom: 1px solid ${borderColor};
+              }
+              .header img {
+                height: 60px; /* Slightly larger logo */
+                max-width: 200px;
+                object-fit: contain;
+                /* filter: brightness(0) invert(1); Uncomment this if your logo is dark and needs to be white against the blue background */
+              }
+              .header h1 {
+                margin: 10px 0 0;
+                font-size: 24px;
+                font-weight: bold;
+              }
+              .content {
+                padding: 30px;
+              }
+              .content p {
+                margin: 12px 0;
+                color: ${darkTextColor};
+                font-size: 16px;
+              }
+              .content span {
+                font-weight: 600; /* Medium bold */
+                color: ${appColor}; /* Highlight key info with app color */
+              }
+              .button {
+                display: inline-block;
+                background-color: ${appColor};
+                color: ${lightTextColor} !important; /* !important to override default link styles */
+                padding: 12px 25px;
+                border-radius: 8px;
+                text-decoration: none;
+                font-weight: bold;
+                margin-top: 20px;
+                transition: background-color 0.3s ease;
+              }
+              .button:hover {
+                background-color: ${appColor}e6; /* Slightly darker on hover */
+              }
+              .footer {
+                text-align: center;
+                padding: 25px 20px;
+                background-color: ${lightAppColor}; /* Lighter shade of app color */
+                border-top: 1px solid ${borderColor};
+                font-size: 13px;
+                color: ${darkTextColor};
+              }
+              .footer h3 {
+                margin: 5px 0;
+                color: ${appColor};
+                font-size: 15px;
+              }
+              .footer a {
+                color: ${appColor};
+                text-decoration: none;
+                font-weight: 600;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <img src="cid:${logoCid}" alt="Fly Numedia Logo" />
+                <h1>${title}</h1>
               </div>
-            </body>
-          </html>
+        
+              <div class="content">
+                <p>${description}</p>
+                ${details.lastName ? `<p><span>Nom:</span> ${details.lastName || ''}</p>` : ""}
+                <p><span>Email:</span> ${details.email || ''}</p>
+                ${details.phone ? `<p><span>Téléphone:</span> ${details.phone}</p>` : ""}
+                ${details.role ? `<p><span>Rôle:</span> ${details.role}</p>` : ""}
+                ${details.paymentStatus ? `<p><span>Statut de Paiement:</span> ${details.paymentStatus}</p>` : ""}
+                ${details.address ? `<p><span>Adresse:</span> ${details.address}</p>` : ""}
+                ${details.price ? `<p><span>Prix:</span> ${details.price}</p>` : ""}
+                ${details.orderId ? `<p><span>ID de Commande:</span> ${details.orderId}</p>` : ""}
+                ${details.passportNumber ? `<p><span>Numéro de passeport:</span> ${details.passportNumber}</p>` : ""}
 
-          
+                ${details.callToActionLink && details.callToActionText ?
+          `<p style="text-align: center;"><a href="${details.callToActionLink}" class="button">${details.callToActionText}</a></p>` : ""
+        }
+              </div>
+        
+              <div class="footer">
+                <h3>Merci d'avoir choisi Fly Numedia!</h3>
+                <p>Cordialement, L'équipe FLY NUMEDIA</p>
+              </div>
+            </div>
+          </body>
+        </html>
         `,
-      attachments: validAttachments, // Attach valid attachments
+      // <a href="https://flynumedia.com/" target="_blank">flynumedia.com</a>
+
+      attachments: validAttachments, // Pass all attachments including the embedded logo
     }));
 
     // Send emails to all recipients

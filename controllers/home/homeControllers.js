@@ -431,11 +431,13 @@ class homeControllers {
   chatBoot = async (req, res) => {
     try {
       // Destructure request body for clarity and direct access to inputs
-      const { query, session_id, image_type, image_data, newSession, email, langCode } = req.body;
+      const { query, session_id, image_type, image_data, newSession, email, langCode, lastName, firstName, phone, passportNumber } = req.body;
       // Constants for API URLs, fetched from environment variables
       const AI_CHAT_API_URL = process.env.AI_CHAT_API_URL;
       const AI_CHAT_API_NEW_SESSION_URL = process.env.AI_CHAT_API_NEW_SESSION_URL;
-
+      const user = {
+        email, lastName, firstName, phone, passportNumber
+      }
       // Basic input validation: A query or a new session request is required
       if (!query && !newSession && !image_data) {
         return res.status(400).json({
@@ -527,39 +529,58 @@ class homeControllers {
       // console.log(aiData);
 
       // Process AI response based on HTTP status
+
       if (aiResponse.ok) {
         // Validate essential fields in the AI response
         if (!aiData.human_response) {
           throw new Error("Invalid response from AI API: 'human_response' field missing.");
         }
+        console.log(aiData.tool_response);
+        if (user != null && aiData.tool_response != null && aiData.tool_response.status != "error" && aiData.tool_response.response_type == 'book_flight') {
+          let subjectPartner = "";
+          let titlePartner = "";
+          let descriptionPartner = "";
+          if (langCode == "en") {
+            subjectPartner = "Your flight booking is confirmed. Thank you for choosing us!";
+            titlePartner = "Flight Booking Confirmed!";
+          } else if (langCode == "fr") {
+            subjectPartner = "Votre réservation de vol est confirmée. Merci de nous avoir choisis !";
+            titlePartner = "Réservation de Vol Confirmée !";
+          } else if (langCode == "ar") {
+            subjectPartner = "تم تأكيد حجز رحلتك. شكراً لاختياركم لنا!";
+            titlePartner = "تم تأكيد حجز الرحلة!";
+          }
+          descriptionPartner = aiData.human_response;
+          //      const user = {
+          //   email, lastName, firstName, phone, passportNumber
+          // }
+          const details = { email, lastName, firstName, phone, passportNumber };
+         
 
-        if (email != null && aiData.tool_response == 'book') {
-          const sellerEmails = [email];
-          const subjectPartner = "Your flight booking is confirmed. Thank you for choosing us! Your flight ticket number is [Your Flight Ticket Number]";
-          const titlePartner = "Flight Booking Confirmed!";
-          const descriptionPartner = "Your flight has been successfully booked. Thank you for choosing Fly Numedia! Here are your booking details:";
+
+
           await send_email({
-            sellerEmails,
+            clientEmail: email,
             subject: subjectPartner,
             title: titlePartner,
             description: descriptionPartner,
             details: details,
             sendToAdmin: false,
-            sendToSellers: true,
-            sendToClient: false,
+            sendToSellers: false,
+            sendToClient: true,
+            isBook: true
           });
 
         }
+
         // Populate the answer object with AI's response
         answer.message = aiData.human_response;
         answer.tool_response = aiData.tool_response; // Data from tools like flight search
-        console.log(answer);
 
         if (answer.tool_response != null)
           if (answer.tool_response.data != null)
             if (answer.tool_response.data.result != null)
-              console.log(answer.tool_response.data.result);
-        answer.query_lang = aiData.query_lang || "en"; // Default to English if language not provided
+              answer.query_lang = aiData.query_lang || "en"; // Default to English if language not provided
         return res.status(200).json(answer);
       } else {
         // Handle specific AI API errors
