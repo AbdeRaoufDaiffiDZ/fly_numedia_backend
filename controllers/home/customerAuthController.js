@@ -242,16 +242,16 @@ class customerAuthController {
 
       await customer.save();
       const token = await createToken({
-        id: createCustomer.id,
-        firstName: createCustomer.firstName,
-        lastName: createCustomer.lastName,
-        sex: createCustomer.sex,
-        dateOfBirth: createCustomer.dateOfBirth,
-        nationality: createCustomer.nationality,
-        email: createCustomer.email,
-        phone: createCustomer.phone,
-        method: createCustomer.method,
-        role: createCustomer.role,
+        id: customer.id,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        sex: customer.sex,
+        dateOfBirth: customer.dateOfBirth,
+        nationality: customer.nationality,
+        email: customer.email,
+        phone: customer.phone,
+        method: customer.method,
+        role: customer.role,
       });
       res.cookie("customerToken", token, {
         expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
