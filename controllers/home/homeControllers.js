@@ -431,7 +431,7 @@ class homeControllers {
   chatBoot = async (req, res) => {
     try {
       // Destructure request body for clarity and direct access to inputs
-      const { query, session_id, image_type, image_data, newSession, email, langCode, lastName, firstName, phone, passportNumber } = req.body;
+      const { query, session_id, image_type, image_data, newSession, email, langCode, lastName, firstName, phone, passportNumber, mode } = req.body;
       // Constants for API URLs, fetched from environment variables
       const AI_CHAT_API_URL = process.env.AI_CHAT_API_URL;
       const AI_CHAT_API_NEW_SESSION_URL = process.env.AI_CHAT_API_NEW_SESSION_URL;
@@ -469,11 +469,12 @@ class homeControllers {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             // Send a minimal body for new session creation, as expected by the API
-            body: JSON.stringify({ message: "new session request", lang: langCode, email ,"phone_number": phone}),
+            body: JSON.stringify({ message: "new session request", lang: langCode, email ,"phone_number": phone, "mode":mode}),
           });
 
           // Check if the session API call was successful
           if (!sessionResponse.ok) {
+            console.log(sessionResponse)
             const errorData = await sessionResponse.json();
             throw new Error(
               `Failed to get new session ID: ${sessionResponse.status} - ${errorData.detail || errorData.error || 'Unknown error'}`
@@ -519,6 +520,7 @@ class homeControllers {
         session_id: answer.session_id,
         image_type, // Will be null if no image is sent
         image_data, // Will be null if no image is sent
+        mode,
       };
 
       const aiResponse = await fetch(AI_CHAT_API_URL, {
