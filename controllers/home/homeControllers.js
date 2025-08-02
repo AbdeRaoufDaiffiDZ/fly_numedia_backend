@@ -463,13 +463,13 @@ class homeControllers {
       // call the new session API to establish a context.
       if (!session_id || newSession) {
         try {
-        
+
 
           const sessionResponse = await fetch(AI_CHAT_API_NEW_SESSION_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             // Send a minimal body for new session creation, as expected by the API
-            body: JSON.stringify({ message: "new session request", lang: langCode, email ,"phone_number": phone, "mode":mode}),
+            body: JSON.stringify({ message: "new session request", lang: langCode, email, "phone_number": phone, "mode": mode }),
           });
 
           // Check if the session API call was successful
@@ -559,7 +559,7 @@ class homeControllers {
           //   email, lastName, firstName, phone, passportNumber
           // }
           const details = { email, lastName, firstName, phone, passportNumber };
-         
+
 
 
 
